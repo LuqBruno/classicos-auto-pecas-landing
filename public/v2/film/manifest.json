@@ -1,0 +1,121 @@
+{
+  "version": "2026-10-26",
+  "variants": {
+    "d": {
+      "width": 1280,
+      "height": 720,
+      "fps": 12,
+      "focusX": 0.85
+    },
+    "m": {
+      "width": 540,
+      "height": 960,
+      "fps": 10,
+      "focusX": 0.5,
+      "minCover": 0.8,
+      "focusY": 0.3
+    }
+  },
+  "intro": {
+    "d": "intro-d.mp4",
+    "m": "intro-m.mp4",
+    "dark": {
+      "d": "dark-d.webp",
+      "m": "dark-m.webp"
+    }
+  },
+  "shots": [
+    {
+      "id": "B",
+      "name": "Arco da câmera até a frente",
+      "frames": {
+        "d": 73,
+        "m": 60
+      },
+      "labels": []
+    },
+    {
+      "id": "C",
+      "name": "Capô abre, câmera sobe",
+      "frames": {
+        "d": 72,
+        "m": 59
+      },
+      "labels": []
+    },
+    {
+      "id": "D",
+      "name": "Aproximação ao detalhe",
+      "frames": {
+        "d": 72,
+        "m": 59
+      },
+      "labels": [
+        {
+          "text": "Vareta do óleo",
+          "from": 0.82,
+          "to": 1,
+          "pos": {
+            "d": [
+              0.49,
+              0.46
+            ],
+            "m": [
+              0.53,
+              0.41
+            ]
+          }
+        },
+        {
+          "text": "Duto de admissão de ar",
+          "from": 0.86,
+          "to": 1,
+          "pos": {
+            "d": [
+              0.74,
+              0.62
+            ],
+            "m": [
+              0.8,
+              0.56
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "name": "Deslocamento pelos materiais",
+      "frames": {
+        "d": 72,
+        "m": 59
+      },
+      "labels": [
+        {
+          "text": "Bateria",
+          "from": 0.8,
+          "to": 1,
+          "pos": {
+            "d": [
+              0.54,
+              0.36
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "name": "Recuo até o carro inteiro",
+      "frames": {
+        "d": 72,
+        "m": 59
+      },
+      "labels": []
+    }
+  ],
+  "bytes": {
+    "d": 14825208,
+    "m": 6909724
+  }
+}
