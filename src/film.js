@@ -6,12 +6,13 @@ const INTRO_SCROLL_EXIT = 40; // px de rolagem que interrompem a abertura
 const INTRO_TIMEOUT = 2600; // ms sem reprodução → acende direto
 const SMOOTHING_MS = 55; // constante de tempo do acompanhamento do quadro
 const JUMP_FRAMES = 36; // saltos maiores (âncoras) não percorrem quadro a quadro
-const SPARSE_STEP = 3; // primeira passada do carregamento: 1 quadro a cada 3
+const SPARSE_STEP = 4; // primeira passada do carregamento: quadros múltiplos de 4 (os primeiros aquecidos)
+const WARM_LEVELS = [8, 4, 2, 1]; // ordem do aquecimento: do esboço ao filme completo
 
 
 const tuning = {
-  d: { cache: 28, ahead: 18, behind: 5, concurrency: 6, warm: 3, maxDpr: 1.5 },
-  m: { cache: 22, ahead: 10, behind: 4, concurrency: 3, warm: 2, maxDpr: 2 },
+  d: { cache: 28, ahead: 18, behind: 5, concurrency: 6, warm: 6, maxDpr: 1.5 },
+  m: { cache: 22, ahead: 10, behind: 4, concurrency: 3, warm: 4, maxDpr: 2 },
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -142,9 +143,8 @@ export function createFilm({ stage, chapters, onFail }) {
     const span = Math.max(ahead, behind);
     for (const pass of [true, false]) {
       for (let d = 1; d <= span; d++) {
-        if ((d % SPARSE_STEP === 0) !== pass) continue;
-        if (d <= ahead) wanted.push(center + d);
-        if (d <= behind) wanted.push(center - d);
+        if (d <= ahead && ((center + d) % SPARSE_STEP === 0) === pass) wanted.push(center + d);
+        if (d <= behind && ((center - d) % SPARSE_STEP === 0) === pass) wanted.push(center - d);
       }
     }
     queue = wanted.filter((i) => i >= 0 && i < frames.length && !cache.has(i));
@@ -221,19 +221,27 @@ export function createFilm({ stage, chapters, onFail }) {
     }
   }
 
-  // Aquecimento: baixa (sem decodificar) os arquivos dos próximos quadros no sentido da rolagem para o
-  // cache HTTP. Quando a janela chega neles, só resta decodificar — sem esperar rede.
+  // Aquecimento: baixa (sem decodificar) os arquivos para o cache HTTP, do grosso ao fino: primeiro
+  // 1 quadro a cada 8 do filme inteiro, depois a cada 4, 2 e 1, sempre a partir de onde a pessoa está e no
+  // sentido da rolagem. Em rede real, quem rola rápido logo tem um esboço completo do filme (nunca congela
+  // esperando download); quem rola devagar recebe os quadros intermediários a tempo.
+  function nextToWarm(c) {
+    const n = frames.length;
+    for (const step of WARM_LEVELS) {
+      for (let d = 0; d < n; d++) {
+        const i = direction > 0 ? (c + d) % n : (c - d + n) % n;
+        if (i % step === 0 && !warmed.has(i) && !cache.has(i)) return i;
+      }
+    }
+    return -1;
+  }
+
   function warm() {
     if (destroyed || document.hidden) return;
-    const c = Math.round(target);
+    const c = clamp(Math.round(target), 0, frames.length - 1);
     const t = tuning[key];
-    while (warming < t.warm && inflight < t.concurrency) {
-      let next = -1;
-      for (let d = 1; d <= frames.length && next < 0; d++) {
-        for (const i of [c + direction * d, c - direction * d]) {
-          if (i >= 0 && i < frames.length && !warmed.has(i) && !cache.has(i)) { next = i; break; }
-        }
-      }
+    while (warming < t.warm) {
+      const next = nextToWarm(c);
       if (next < 0) return;
       warmed.add(next);
       warming++;

@@ -1,6 +1,6 @@
-import { createFilm } from './film.js?v=continuidade-hd-05';
-import { initHeader, initMenu, initChapters, initQuickForm, initConsultForm } from './ui.js?v=continuidade-hd-05';
-import { initPolish } from './polish.js?v=continuidade-hd-05';
+import { createFilm } from './film.js?v=continuidade-hd-06';
+import { initHeader, initMenu, initChapters, initQuickForm, initConsultForm } from './ui.js?v=continuidade-hd-06';
+import { initPolish } from './polish.js?v=continuidade-hd-06';
 
 const root = document.documentElement;
 const stage = document.querySelector('.stage');
