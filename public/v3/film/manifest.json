@@ -1,0 +1,125 @@
+{
+  "version": "2026-11-04-continuidade-hd-03",
+  "variants": {
+    "d": {
+      "width": 1920,
+      "height": 1080,
+      "fps": 24,
+      "focusX": 0.85
+    },
+    "m": {
+      "width": 720,
+      "height": 1280,
+      "fps": 18,
+      "focusX": 0.5,
+      "minCover": 0.8,
+      "focusY": 0.3
+    }
+  },
+  "intro": {
+    "d": "intro-d.mp4",
+    "m": "intro-m.mp4",
+    "dark": {
+      "d": "dark-d.webp",
+      "m": "dark-m.webp"
+    }
+  },
+  "shots": [
+    {
+      "id": "B",
+      "name": "Arco da câmera até a frente",
+      "frames": {
+        "d": 73,
+        "m": 55
+      },
+      "labels": []
+    },
+    {
+      "id": "C",
+      "name": "Capô abre, câmera sobe",
+      "frames": {
+        "d": 144,
+        "m": 108
+      },
+      "labels": []
+    },
+    {
+      "id": "D",
+      "name": "Aproximação ao detalhe",
+      "frames": {
+        "d": 72,
+        "m": 54
+      },
+      "labels": [
+        {
+          "text": "Vareta do óleo",
+          "from": 0.82,
+          "to": 1,
+          "pos": {
+            "d": [
+              0.29,
+              0.39
+            ],
+            "m": [
+              0.2,
+              0.32
+            ]
+          }
+        },
+        {
+          "text": "Duto de admissão de ar",
+          "from": 0.86,
+          "to": 1,
+          "pos": {
+            "d": [
+              0.59,
+              0.55
+            ],
+            "m": [
+              0.71,
+              0.39
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "E",
+      "name": "Deslocamento pelos materiais",
+      "frames": {
+        "d": 72,
+        "m": 54
+      },
+      "labels": [
+        {
+          "text": "Bateria",
+          "from": 0.8,
+          "to": 1,
+          "pos": {
+            "d": [
+              0.37,
+              0.26
+            ],
+            "m": [
+              0.4,
+              0.33
+            ]
+          }
+        }
+      ]
+    },
+    {
+      "id": "F",
+      "name": "Recuo até o carro inteiro",
+      "frames": {
+        "d": 72,
+        "m": 54
+      },
+      "labels": []
+    }
+  ],
+  "bytes": {
+    "d": 30482318,
+    "m": 11160416
+  }
+}

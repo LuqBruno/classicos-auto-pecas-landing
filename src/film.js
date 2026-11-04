@@ -1,15 +1,15 @@
 // Filme ligado à rolagem: um palco fixo, quadros WebP desenhados num canvas.
 // Tempos e quadros vêm do manifesto (public/v2/film/manifest.json); nada é fixado aqui.
 
-const BASE = 'public/v2/film/';
+const BASE = 'public/v3/film/';
 const INTRO_SCROLL_EXIT = 40; // px de rolagem que interrompem a abertura
 const INTRO_TIMEOUT = 2600; // ms sem reprodução → acende direto
 const SMOOTHING_MS = 85; // constante de tempo do acompanhamento do quadro
 const JUMP_FRAMES = 36; // saltos maiores (âncoras) não percorrem quadro a quadro
 
 const tuning = {
-  d: { cache: 110, ahead: 30, behind: 10, concurrency: 6, maxDpr: 1.5 },
-  m: { cache: 70, ahead: 22, behind: 8, concurrency: 4, maxDpr: 2 },
+  d: { cache: 32, ahead: 14, behind: 6, concurrency: 4, maxDpr: 1.5 },
+  m: { cache: 22, ahead: 10, behind: 4, concurrency: 3, maxDpr: 2 },
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -139,6 +139,7 @@ export function createFilm({ stage, chapters, onFail }) {
   }
 
   function pump() {
+    if (destroyed || document.hidden) return;
     const t = tuning[key];
     while (inflight < t.concurrency && queue.length) load(queue.shift());
   }
@@ -194,6 +195,7 @@ export function createFilm({ stage, chapters, onFail }) {
   // Pré-carrega em segundo plano o restante do filme, a partir de onde a pessoa está.
   let idleHandle = 0;
   function prefetchIdle() {
+    clearTimeout(idleHandle);
     if (destroyed || document.hidden) return;
     const t = tuning[key];
     if (inflight < 2 && cache.size < t.cache - 4) {
@@ -299,7 +301,7 @@ export function createFilm({ stage, chapters, onFail }) {
   }
 
   function schedule() {
-    if (!raf && !destroyed) raf = requestAnimationFrame(tick);
+    if (!raf && !destroyed && !document.hidden) raf = requestAnimationFrame(tick);
   }
 
   // ---------- rótulos ----------
@@ -400,7 +402,14 @@ export function createFilm({ stage, chapters, onFail }) {
   }
 
   function onVisibility() {
-    if (!document.hidden) {
+    if (document.hidden) {
+      cancelAnimationFrame(raf);
+      raf = 0;
+      lastTime = 0;
+      clearTimeout(idleHandle);
+      endIntro('hidden');
+    } else {
+      pump();
       prefetchIdle();
       schedule();
     }
@@ -415,6 +424,8 @@ export function createFilm({ stage, chapters, onFail }) {
     destroyed = true;
     cancelAnimationFrame(raf);
     clearTimeout(idleHandle);
+    clearTimeout(resizeTimer);
+    removeEventListener('load', onScroll);
     removeEventListener('scroll', onScroll);
     removeEventListener('resize', onResize);
     document.removeEventListener('visibilitychange', onVisibility);
@@ -432,7 +443,7 @@ export function createFilm({ stage, chapters, onFail }) {
       prefetchIdle();
       // Remede quando fontes e conteúdo assentarem (alturas dos capítulos mudam).
       document.fonts?.ready.then(() => { measure(); onScroll(); });
-      addEventListener('load', () => { measure(); onScroll(); }, { once: true });
+      addEventListener('load', onScroll, { once: true });
     },
     destroy,
     remeasure() { measure(); onScroll(); },
