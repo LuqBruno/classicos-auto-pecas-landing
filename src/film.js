@@ -4,12 +4,14 @@
 const BASE = 'public/v3/film/';
 const INTRO_SCROLL_EXIT = 40; // px de rolagem que interrompem a abertura
 const INTRO_TIMEOUT = 2600; // ms sem reprodução → acende direto
-const SMOOTHING_MS = 85; // constante de tempo do acompanhamento do quadro
+const SMOOTHING_MS = 55; // constante de tempo do acompanhamento do quadro
 const JUMP_FRAMES = 36; // saltos maiores (âncoras) não percorrem quadro a quadro
+const SPARSE_STEP = 3; // primeira passada do carregamento: 1 quadro a cada 3
+
 
 const tuning = {
-  d: { cache: 32, ahead: 14, behind: 6, concurrency: 4, maxDpr: 1.5 },
-  m: { cache: 22, ahead: 10, behind: 4, concurrency: 3, maxDpr: 2 },
+  d: { cache: 28, ahead: 18, behind: 5, concurrency: 6, warm: 3, maxDpr: 1.5 },
+  m: { cache: 22, ahead: 10, behind: 4, concurrency: 3, warm: 2, maxDpr: 2 },
 };
 
 const clamp = (v, a, b) => Math.min(b, Math.max(a, v));
@@ -44,6 +46,8 @@ export function createFilm({ stage, chapters, onFail }) {
   let failures = 0;
   let destroyed = false;
   let tags = [];
+  let warmed = new Set(); // quadros já baixados para o cache HTTP
+  let warming = 0;
 
   const pickVariant = () => (innerWidth / innerHeight < 0.8 ? 'm' : 'd');
 
@@ -77,6 +81,7 @@ export function createFilm({ stage, chapters, onFail }) {
     for (const entry of cache.values()) release(entry);
     cache = new Map();
     queue = [];
+    warmed = new Set();
     drawn = -1;
     buildLabels();
   }
@@ -126,16 +131,26 @@ export function createFilm({ stage, chapters, onFail }) {
 
   function request(center) {
     const t = tuning[key];
-    const wanted = [];
     const ahead = direction > 0 ? t.ahead : t.behind;
     const behind = direction > 0 ? t.behind : t.ahead;
-    for (let d = 0; d <= Math.max(ahead, behind); d++) {
-      if (d <= ahead) wanted.push(center + d);
-      if (d && d <= behind) wanted.push(center - d);
+    // Downloads que ficaram para trás da janela são cancelados: liberam vaga para o que vem pela frente.
+    for (const [i, e] of cache) {
+      if (!e.ready && (i < center - behind - 2 || i > center + ahead + 2)) { release(e); cache.delete(i); }
+    }
+    // Primeiro quadros espaçados (sempre há um pronto perto do alvo em rolagem rápida), depois o preenchimento.
+    const wanted = [center];
+    const span = Math.max(ahead, behind);
+    for (const pass of [true, false]) {
+      for (let d = 1; d <= span; d++) {
+        if ((d % SPARSE_STEP === 0) !== pass) continue;
+        if (d <= ahead) wanted.push(center + d);
+        if (d <= behind) wanted.push(center - d);
+      }
     }
     queue = wanted.filter((i) => i >= 0 && i < frames.length && !cache.has(i));
     pump();
     evict(center);
+    warm();
   }
 
   function pump() {
@@ -144,11 +159,25 @@ export function createFilm({ stage, chapters, onFail }) {
     while (inflight < t.concurrency && queue.length) load(queue.shift());
   }
 
+  // O quadro só entra no cache já decodificado (ImageBitmap, decodificado fora da thread principal).
+  // Antes, o <img> era marcado pronto no onload e a decodificação do WebP acontecia dentro do
+  // drawImage, durante a rolagem: era isso que travava o filme.
+  async function decodeFrame(url, signal) {
+    if (window.createImageBitmap) {
+      const res = await fetch(url, { signal });
+      if (!res.ok) throw new Error(String(res.status));
+      return createImageBitmap(await res.blob());
+    }
+    const img = new Image();
+    img.src = url;
+    await img.decode();
+    return img;
+  }
+
   function load(i) {
     if (cache.has(i)) return;
-    const img = new Image();
-    img.decoding = 'async';
-    const entry = { img, ready: false, failed: false, used: performance.now() };
+    const ctrl = new AbortController();
+    const entry = { img: null, ready: false, ctrl, used: performance.now() };
     cache.set(i, entry);
     inflight++;
     const settle = () => {
@@ -157,29 +186,29 @@ export function createFilm({ stage, chapters, onFail }) {
       inflight--;
       if (!destroyed) pump();
     };
-    img.onload = () => {
+    decodeFrame(frames[i].url, ctrl.signal).then((img) => {
+      if (entry.released) { img.close?.(); return; }
+      entry.img = img;
       entry.ready = true;
       failures = 0;
-      // Decodificação antecipada fora do quadro de desenho; não bloqueia a fila.
-      img.decode?.().catch(() => {});
       if (Math.abs(i - Math.round(shown)) < 3) schedule();
       settle();
-    };
-    img.onerror = () => {
+    }, () => {
+      if (entry.released) return;
       cache.delete(i);
       failures++;
       if (failures > 8 && drawn < 0) fail();
       settle();
-    };
-    img.src = frames[i].url;
+    });
   }
 
-  // Descarta um quadro sem disparar onerror (src vazio conta como erro no navegador).
+  // Descarta um quadro: cancela o download pendente e libera a memória decodificada.
   function release(entry) {
-    const { img } = entry;
-    img.onload = img.onerror = null;
+    entry.released = true;
     if (!entry.done) { entry.done = true; inflight--; }
-    img.removeAttribute('src');
+    entry.ctrl?.abort();
+    entry.img?.close?.();
+    entry.img = null;
   }
 
   function evict(center) {
@@ -192,23 +221,37 @@ export function createFilm({ stage, chapters, onFail }) {
     }
   }
 
-  // Pré-carrega em segundo plano o restante do filme, a partir de onde a pessoa está.
+  // Aquecimento: baixa (sem decodificar) os arquivos dos próximos quadros no sentido da rolagem para o
+  // cache HTTP. Quando a janela chega neles, só resta decodificar — sem esperar rede.
+  function warm() {
+    if (destroyed || document.hidden) return;
+    const c = Math.round(target);
+    const t = tuning[key];
+    while (warming < t.warm && inflight < t.concurrency) {
+      let next = -1;
+      for (let d = 1; d <= frames.length && next < 0; d++) {
+        for (const i of [c + direction * d, c - direction * d]) {
+          if (i >= 0 && i < frames.length && !warmed.has(i) && !cache.has(i)) { next = i; break; }
+        }
+      }
+      if (next < 0) return;
+      warmed.add(next);
+      warming++;
+      const url = frames[next].url;
+      fetch(url, { priority: 'low' })
+        .then((r) => r.arrayBuffer())
+        .catch(() => warmed.delete(next))
+        .finally(() => { warming--; if (url === frames[next]?.url) warm(); });
+    }
+  }
+
+  // Mantém o aquecimento andando quando a página está parada.
   let idleHandle = 0;
   function prefetchIdle() {
     clearTimeout(idleHandle);
     if (destroyed || document.hidden) return;
-    const t = tuning[key];
-    if (inflight < 2 && cache.size < t.cache - 4) {
-      const c = Math.round(target);
-      for (let d = 1; d < frames.length; d++) {
-        const i = c + d;
-        if (i < frames.length && !cache.has(i)) { load(i); break; }
-      }
-    }
-    idleHandle = setTimeout(() => {
-      if (window.requestIdleCallback) requestIdleCallback(prefetchIdle, { timeout: 600 });
-      else prefetchIdle();
-    }, 120);
+    warm();
+    idleHandle = setTimeout(prefetchIdle, 400);
   }
 
   // ---------- desenho ----------
@@ -276,8 +319,8 @@ export function createFilm({ stage, chapters, onFail }) {
     // Faixas fora do quadro (variante vertical): estende a primeira e a última linha do próprio quadro
     // (parede e piso do estúdio), sem caixa preta. As sombras do palco escurecem as bordas.
     if (b.y > 0.5) {
-      const iw = entry.img.naturalWidth;
-      const ih = entry.img.naturalHeight;
+      const iw = entry.img.naturalWidth || entry.img.width;
+      const ih = entry.img.naturalHeight || entry.img.height;
       const edge = Math.max(2, Math.round(ih * 0.02));
       ctx.drawImage(entry.img, 0, 0, iw, edge, b.x, 0, b.w, Math.ceil(b.y));
       const bottom = b.y + b.h;
